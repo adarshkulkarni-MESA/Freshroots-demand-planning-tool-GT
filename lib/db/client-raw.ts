@@ -29,7 +29,8 @@ function makeNeonClient(url: string): RawClient {
       const finalSql = isInsert && !/RETURNING/i.test(pgSql)
         ? pgSql.replace(/;?\s*$/, " RETURNING id")
         : pgSql;
-      const rows = (await sql(finalSql, args)) as Record<string, unknown>[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = (await (sql as any).query(finalSql, args)) as Record<string, unknown>[];
       const lastInsertRowid = isInsert && rows.length > 0 && rows[0].id != null
         ? BigInt(rows[0].id as number)
         : undefined;
