@@ -97,6 +97,28 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 `;
 
+// Schema evolution: rename run_at → ran_at on Neon if table was created by an older migration.
+// The DO block is idempotent: if run_at doesn't exist (already renamed), the IF is skipped.
+const PG_RENAME_RUN_AT = `
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'forecast_runs' AND column_name = 'run_at'
+  ) THEN
+    ALTER TABLE forecast_runs RENAME COLUMN run_at TO ran_at;
+  END IF;
+END $$
+`;
+
+// Add columns that may be missing from an older forecast_runs schema.
+const PG_ADD_MISSING_COLS = [
+  "ALTER TABLE forecast_runs ADD COLUMN IF NOT EXISTS ran_at TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE forecast_runs ADD COLUMN IF NOT EXISTS is_festival_month INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE forecast_runs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed'",
+  "ALTER TABLE forecast_runs ADD COLUMN IF NOT EXISTS data_hash TEXT",
+];
+
 export async function runMigrations() {
   const url = process.env.DATABASE_URL ?? "file:./freshroots.db";
   const isPg = isPostgresUrl(url);
@@ -108,5 +130,22 @@ export async function runMigrations() {
   const statements = CREATE_TABLES.split(";").map((s) => s.trim()).filter(Boolean);
   for (const stmt of statements) {
     await client.execute(stmt);
+  }
+
+  if (isPg) {
+    // Step 1: rename run_at → ran_at (handles Neon tables created by old migration)
+    try {
+      await client.execute(PG_RENAME_RUN_AT.trim());
+    } catch {
+      // Column already renamed or table doesn't exist yet — safe to ignore
+    }
+    // Step 2: add any columns missing from the old schema
+    for (const stmt of PG_ADD_MISSING_COLS) {
+      try {
+        await client.execute(stmt);
+      } catch {
+        // Column already exists — safe to ignore
+      }
+    }
   }
 }
