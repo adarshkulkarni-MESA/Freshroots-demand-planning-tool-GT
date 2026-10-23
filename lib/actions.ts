@@ -37,7 +37,7 @@ export async function getLatestRecommendations() {
     const { runId } = await triggerForecastRun();
     return getRecommendationsByRun(runId);
   }
-  const run = runRows.rows[0] as { id: number; ran_at: string; rules_version: string; is_festival_month: number; analysis_month: string };
+  const run = runRows.rows[0] as unknown as { id: number; ran_at: string; rules_version: string; is_festival_month: number; analysis_month: string };
 
   return getRecommendationsByRun(run.id);
 }
@@ -58,7 +58,7 @@ export async function getRecommendationsByRun(runId: number) {
   });
 
   return rows.rows.map((r) => {
-    const row = r as RecRow;
+    const row = r as unknown as RecRow;
     return {
       ...row,
       flags: JSON.parse(row.flags_json || "[]") as { rule: string; detail: string }[],
@@ -79,7 +79,7 @@ export async function getOverviewStats() {
     return _buildStats(runId);
   }
 
-  const run = runRows.rows[0] as { id: number; ran_at: string; is_festival_month: number };
+  const run = runRows.rows[0] as unknown as { id: number; ran_at: string; is_festival_month: number };
   return _buildStats(run.id, run);
 }
 
@@ -87,7 +87,7 @@ async function _buildStats(runId: number, run?: { id: number; ran_at: string; is
   const client = getClient();
   if (!run) {
     const r = await client.execute({ sql: "SELECT id, ran_at, is_festival_month FROM forecast_runs WHERE id = ?", args: [runId] });
-    run = r.rows[0] as { id: number; ran_at: string; is_festival_month: number };
+    run = r.rows[0] as unknown as { id: number; ran_at: string; is_festival_month: number };
   }
 
   const counts = await client.execute({
@@ -96,7 +96,7 @@ async function _buildStats(runId: number, run?: { id: number; ran_at: string; is
   });
 
   const countMap: Record<string, number> = { REORDER_URGENT: 0, PAUSE_ORDER: 0, MONITOR: 0 };
-  for (const row of counts.rows as { action: string; cnt: number }[]) {
+  for (const row of counts.rows as unknown as { action: string; cnt: number }[]) {
     countMap[row.action] = row.cnt;
   }
 
@@ -112,7 +112,7 @@ async function _buildStats(runId: number, run?: { id: number; ran_at: string; is
     reorderUrgent: countMap.REORDER_URGENT,
     pauseOrder: countMap.PAUSE_ORDER,
     monitor: countMap.MONITOR,
-    pendingApprovals: (pending.rows[0] as { cnt: number }).cnt,
+    pendingApprovals: (pending.rows[0] as unknown as { cnt: number }).cnt,
     totalSkus: countMap.REORDER_URGENT + countMap.PAUSE_ORDER + countMap.MONITOR,
   };
 }
@@ -184,7 +184,7 @@ ${flagSummary}`;
     const { text } = await generateText({
       model: google("gemini-1.5-flash"),
       prompt,
-      maxTokens: 300,
+      maxOutputTokens: 300,
     });
     return { text };
   } catch (e) {
@@ -324,7 +324,7 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
   });
 
   if (!rows.rows.length) return { success: false, error: "Recommendation not found." };
-  const rec = rows.rows[0] as {
+  const rec = rows.rows[0] as unknown as {
     sku_id: string; sku_name: string; reorder_qty: number | null;
     standard_reorder_qty: number; distributor_name: string; distributor_id: string;
   };

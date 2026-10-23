@@ -33,7 +33,8 @@ export async function dbExec(
     const cleanSql = pgSql
       .replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT INTO")
       .replace(/;?\s*$/, " ON CONFLICT DO NOTHING");
-    const rows = (await getNeon()(cleanSql, args)) as Record<string, unknown>[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (await (getNeon() as any)(cleanSql, args)) as Record<string, unknown>[];
     return { rows };
   }
   const result = await getLibsql().execute({ sql, args });
@@ -49,7 +50,8 @@ export async function dbExecWithId(
     let i = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++i}`);
     const withReturn = pgSql.replace(/;?\s*$/, " RETURNING id");
-    const rows = (await getNeon()(withReturn, args)) as { id: number }[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (await (getNeon() as any)(withReturn, args)) as { id: number }[];
     return rows[0]?.id ?? 0;
   }
   const result = await getLibsql().execute({ sql, args });
@@ -64,8 +66,9 @@ export async function dbQuery<T extends Record<string, unknown>>(
   if (isPostgres()) {
     let i = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-    return (await getNeon()(pgSql, args)) as T[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (await (getNeon() as any)(pgSql, args)) as T[];
   }
   const result = await getLibsql().execute({ sql, args });
-  return result.rows as T[];
+  return result.rows as unknown as T[];
 }

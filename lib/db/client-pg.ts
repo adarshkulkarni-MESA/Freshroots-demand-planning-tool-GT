@@ -21,5 +21,6 @@ export async function pgExec(
   // Replace ? with $1, $2, ... for compatibility
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  return client(pgSql, args);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (client as any)(pgSql, args);
 }

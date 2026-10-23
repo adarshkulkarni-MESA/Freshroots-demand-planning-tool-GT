@@ -8,5 +8,5 @@ interface ImportLog {
 
 export default async function UploadPage() {
   const history = await getImportHistory();
-  return <UploadClient history={history as ImportLog[]} />;
+  return <UploadClient history={history as unknown as ImportLog[]} />;
 }

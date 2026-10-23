@@ -97,7 +97,7 @@ export async function seedDatabase() {
 
   // Check if already seeded
   const existing = await client.execute("SELECT COUNT(*) as cnt FROM skus");
-  if ((existing.rows[0] as { cnt: number }).cnt > 0) return;
+  if ((existing.rows[0] as unknown as { cnt: number }).cnt > 0) return;
 
   const now = new Date().toISOString();
 
@@ -130,7 +130,7 @@ export async function seedDatabase() {
     sql: "INSERT INTO import_logs (file_type, filename, imported_at, row_count, status) VALUES (?, ?, ?, ?, ?)",
     args: ["seed", "initial_seed", now, 15 + 240 + 15, "success"],
   });
-  const importId = importResult.lastInsertRowid;
+  const importId = importResult.lastInsertRowid ? Number(importResult.lastInsertRowid) : null;
 
   // Insert inventory
   for (const inv of INVENTORY) {

@@ -21,12 +21,12 @@ export async function runForecast(): Promise<number> {
     sql: "SELECT is_festival_month FROM calendar_months WHERE year_month = ?",
     args: [analysisMonth],
   });
-  const isFestival = calRows.rows.length > 0 && (calRows.rows[0] as CalRow).is_festival_month === 1;
+  const isFestival = calRows.rows.length > 0 && (calRows.rows[0] as unknown as CalRow).is_festival_month === 1;
 
   // Load all sales — we'll window W27–W38 (12w) and W39–W42 (4w)
   const salesRows = await client.execute("SELECT sku_id, week_label, units_sold FROM weekly_sales");
   const salesMap: Record<string, SalesRow[]> = {};
-  for (const row of salesRows.rows as SalesRow[]) {
+  for (const row of salesRows.rows as unknown as SalesRow[]) {
     if (!salesMap[row.sku_id]) salesMap[row.sku_id] = [];
     salesMap[row.sku_id].push(row);
   }
@@ -41,7 +41,7 @@ export async function runForecast(): Promise<number> {
     "SELECT sku_id, units_on_hand FROM inventory_snapshots ORDER BY as_of_date DESC"
   );
   const invMap: Record<string, number> = {};
-  for (const row of invRows.rows as InvRow[]) {
+  for (const row of invRows.rows as unknown as InvRow[]) {
     if (!(row.sku_id in invMap)) invMap[row.sku_id] = row.units_on_hand;
   }
 
@@ -58,7 +58,7 @@ export async function runForecast(): Promise<number> {
   const runId = Number(runResult.lastInsertRowid);
 
   // Run engine for each SKU
-  for (const row of skuRows.rows as SkuRow[]) {
+  for (const row of skuRows.rows as unknown as SkuRow[]) {
     const skuId = row.sku_id;
     const allWeeks = salesMap[skuId] ?? [];
 
