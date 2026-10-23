@@ -1,6 +1,10 @@
 import { getClient } from "./client-raw";
 
-const CREATE_TABLES = `
+function isPostgresUrl(url: string) {
+  return url.startsWith("postgresql://") || url.startsWith("postgres://");
+}
+
+const SQLITE_TABLES = `
 CREATE TABLE IF NOT EXISTS distributors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   distributor_id TEXT NOT NULL UNIQUE,
@@ -94,6 +98,12 @@ CREATE TABLE IF NOT EXISTS audit_events (
 `;
 
 export async function runMigrations() {
+  const url = process.env.DATABASE_URL ?? "file:./freshroots.db";
+  const isPg = isPostgresUrl(url);
+  // PostgreSQL uses SERIAL for auto-increment; SQLite uses INTEGER PRIMARY KEY AUTOINCREMENT
+  const CREATE_TABLES = isPg
+    ? SQLITE_TABLES.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, "SERIAL PRIMARY KEY")
+    : SQLITE_TABLES;
   const client = getClient();
   const statements = CREATE_TABLES.split(";").map((s) => s.trim()).filter(Boolean);
   for (const stmt of statements) {
