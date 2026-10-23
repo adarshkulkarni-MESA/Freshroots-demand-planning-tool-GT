@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { approveRecommendation, rejectRecommendation } from "@/lib/actions";
+import { approveRecommendation, rejectRecommendation, createZohoPurchaseOrder } from "@/lib/actions";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, PauseCircle, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { AlertTriangle, PauseCircle, CheckCircle2, XCircle, AlertCircle, ShoppingCart } from "lucide-react";
 
 type Rec = {
   id: number; sku_id: string; sku_name: string; action: string;
@@ -17,12 +17,19 @@ export function ReviewQueue({ recs }: { recs: Rec[] }) {
   const router = useRouter();
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState<Record<number, string>>({});
+  const [zohoStatus, setZohoStatus] = useState<Record<number, { loading?: boolean; result?: { success: boolean; po_number?: string; error?: string } }>>({});
 
   async function approve(id: number) {
     setLoading((p) => ({ ...p, [id]: "approving" }));
     await approveRecommendation(id, "Raghav Kulkarni", notes[id]);
     router.refresh();
     setLoading((p) => ({ ...p, [id]: "" }));
+  }
+
+  async function sendToZoho(id: number) {
+    setZohoStatus((p) => ({ ...p, [id]: { loading: true } }));
+    const result = await createZohoPurchaseOrder(id);
+    setZohoStatus((p) => ({ ...p, [id]: { result } }));
   }
 
   async function reject(id: number) {
@@ -120,10 +127,43 @@ export function ReviewQueue({ recs }: { recs: Rec[] }) {
 
               {/* Status badge for decided items */}
               {!isPending && (
-                <div className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg ${
-                  isApproved ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
-                }`}>
-                  {isApproved ? "✓ Approved" : "✗ Rejected"}
+                <div className="flex flex-col items-end gap-2">
+                  <div className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg ${
+                    isApproved ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
+                  }`}>
+                    {isApproved ? "✓ Approved" : "✗ Rejected"}
+                  </div>
+                  {/* Zoho PO button — only for approved REORDER_URGENT */}
+                  {isApproved && rec.action === "REORDER_URGENT" && (
+                    <div>
+                      {!zohoStatus[rec.id] && (
+                        <button
+                          onClick={() => sendToZoho(rec.id)}
+                          className="flex items-center gap-1.5 text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          Send PO to Zoho
+                        </button>
+                      )}
+                      {zohoStatus[rec.id]?.loading && (
+                        <div className="flex items-center gap-1.5 text-xs text-orange-600">
+                          <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                          Creating PO…
+                        </div>
+                      )}
+                      {zohoStatus[rec.id]?.result?.success && (
+                        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          PO {zohoStatus[rec.id]?.result?.po_number} created
+                        </div>
+                      )}
+                      {zohoStatus[rec.id]?.result?.success === false && (
+                        <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200 max-w-48">
+                          {zohoStatus[rec.id]?.result?.error}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
