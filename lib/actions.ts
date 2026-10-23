@@ -277,7 +277,12 @@ export async function getImportHistory() {
   const rows = await client.execute(
     "SELECT * FROM import_logs ORDER BY id DESC LIMIT 20"
   );
-  return rows.rows;
+  return rows.rows.map((r) => ({
+    ...r,
+    imported_at: r.imported_at instanceof Date
+      ? (r.imported_at as Date).toISOString()
+      : String(r.imported_at ?? ""),
+  }));
 }
 
 // ─── Zoho Inventory PO ───────────────────────────────────────────────────────
