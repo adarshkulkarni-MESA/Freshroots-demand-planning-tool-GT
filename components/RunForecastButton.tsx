@@ -23,7 +23,7 @@ export function RunForecastButton() {
     <button
       onClick={handleRun}
       disabled={loading}
-      className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+      className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-md shadow-emerald-200 hover:shadow-lg hover:shadow-emerald-200 hover:-translate-y-px transition-all duration-150"
     >
       <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
       {loading ? "Running…" : "Run Forecast"}
