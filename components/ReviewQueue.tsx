@@ -9,7 +9,8 @@ type Rec = {
   id: number; sku_id: string; sku_name: string; action: string;
   reorder_qty: number | null; stock_cover_weeks: number;
   avg_4w: number; avg_12w: number; perishability: string;
-  approval_status: string; flags: { rule: string; detail: string }[];
+  approval_status: string; override_note?: string | null;
+  flags: { rule: string; detail: string }[];
   distributor_name: string;
 };
 
@@ -61,6 +62,10 @@ export function ReviewQueue({ recs }: { recs: Rec[] }) {
         const isApproved = rec.approval_status === "approved";
         const isRejected = rec.approval_status === "rejected";
         const isPending = rec.approval_status === "pending";
+        const existingPO = rec.override_note?.startsWith("Zoho PO created:")
+          ? rec.override_note.replace("Zoho PO created:", "").trim() : null;
+        const zs = zohoStatus[rec.id];
+        const shownPO = zs?.result?.po_number ?? existingPO;
 
         return (
           <div
@@ -136,7 +141,24 @@ export function ReviewQueue({ recs }: { recs: Rec[] }) {
                   {/* Zoho PO button — only for approved REORDER_URGENT */}
                   {isApproved && rec.action === "REORDER_URGENT" && (
                     <div>
-                      {!zohoStatus[rec.id] && (
+                      {shownPO ? (
+                        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200">
+                          <CheckCircle2 className="w-3 h-3" />
+                          PO {shownPO} created
+                        </div>
+                      ) : zs?.loading ? (
+                        <div className="flex items-center gap-1.5 text-xs text-orange-600">
+                          <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                          Creating PO…
+                        </div>
+                      ) : zs?.result?.success === false ? (
+                        <div className="space-y-1">
+                          <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200 max-w-48">
+                            {zs.result.error}
+                          </div>
+                          <button onClick={() => sendToZoho(rec.id)} className="text-xs text-orange-600 underline">Retry</button>
+                        </div>
+                      ) : (
                         <button
                           onClick={() => sendToZoho(rec.id)}
                           className="flex items-center gap-1.5 text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -144,23 +166,6 @@ export function ReviewQueue({ recs }: { recs: Rec[] }) {
                           <ShoppingCart className="w-3.5 h-3.5" />
                           Send PO to Zoho
                         </button>
-                      )}
-                      {zohoStatus[rec.id]?.loading && (
-                        <div className="flex items-center gap-1.5 text-xs text-orange-600">
-                          <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                          Creating PO…
-                        </div>
-                      )}
-                      {zohoStatus[rec.id]?.result?.success && (
-                        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200">
-                          <CheckCircle2 className="w-3 h-3" />
-                          PO {zohoStatus[rec.id]?.result?.po_number} created
-                        </div>
-                      )}
-                      {zohoStatus[rec.id]?.result?.success === false && (
-                        <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200 max-w-48">
-                          {zohoStatus[rec.id]?.result?.error}
-                        </div>
                       )}
                     </div>
                   )}
