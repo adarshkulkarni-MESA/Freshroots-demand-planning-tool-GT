@@ -504,7 +504,7 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
       purchaseorder?: { purchaseorder_id: string; purchaseorder_number: string };
     };
 
-    if (zohoData.code !== 0) throw new Error(zohoData.message);
+    if (zohoData.code !== 0) throw new Error(`${zohoData.message} [debug: itemId=${itemId ?? "none"}, name=${(lineItem.name as string) ?? "n/a"}]`);
 
     const poId = zohoData.purchaseorder?.purchaseorder_id ?? "";
     const poNumber = zohoData.purchaseorder?.purchaseorder_number ?? "";
