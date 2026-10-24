@@ -471,9 +471,12 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
       // items scope not granted — use name fallback; item must be a purchase item in Zoho
     }
 
+    // When items scope is missing we use a FRP-prefixed SKU ID as the item name.
+    // This avoids matching the existing Zoho catalog item (which is not a purchase
+    // item) and causes Zoho to create a new purchase item for this SKU on first use.
     const lineItem: Record<string, unknown> = itemId
-      ? { item_id: itemId, description: `Reorder for ${rec.sku_id} (Freshroots demand planning)`, quantity: qty, rate: 0, unit: "Units" }
-      : { name: rec.sku_name, description: `Reorder for ${rec.sku_id} (Freshroots demand planning)`, quantity: qty, rate: 0, unit: "Units" };
+      ? { item_id: itemId, description: `${rec.sku_name} — Reorder for ${rec.sku_id} (Freshroots demand planning)`, quantity: qty, rate: 0, unit: "Units" }
+      : { name: `FRP-${rec.sku_id}`, description: `${rec.sku_name} — Reorder for ${rec.sku_id} (Freshroots demand planning)`, quantity: qty, rate: 0, unit: "Units" };
 
     const poPayload: Record<string, unknown> = {
       ...(vendorId ? { vendor_id: vendorId } : { vendor_name: rec.distributor_name }),
