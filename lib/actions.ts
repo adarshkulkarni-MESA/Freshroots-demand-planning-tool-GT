@@ -383,10 +383,16 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
     const token = await getZohoAccessToken();
     const orgId = process.env.ZOHO_ORG_ID || "";
 
-    const vendorId = await getOrCreateZohoVendor(token, orgId, rec.distributor_name);
+    // Try to resolve vendor_id; fall back to vendor_name if contacts scope is not granted
+    let vendorId: string | undefined;
+    try {
+      vendorId = await getOrCreateZohoVendor(token, orgId, rec.distributor_name);
+    } catch {
+      // contacts scope missing — proceed with vendor_name only
+    }
 
-    const poPayload = {
-      vendor_id: vendorId,
+    const poPayload: Record<string, unknown> = {
+      ...(vendorId ? { vendor_id: vendorId } : { vendor_name: rec.distributor_name }),
       purchaseorder_number: `PO-${Date.now()}`,
       date: now.slice(0, 10),
       delivery_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
