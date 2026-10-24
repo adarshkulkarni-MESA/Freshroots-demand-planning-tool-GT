@@ -287,6 +287,49 @@ export async function getImportHistory() {
 
 // ─── Zoho Inventory PO ───────────────────────────────────────────────────────
 
+async function getOrCreateZohoVendor(
+  token: string,
+  orgId: string,
+  vendorName: string
+): Promise<string> {
+  // Search for existing vendor contact
+  const searchRes = await fetch(
+    `https://www.zohoapis.in/inventory/v1/contacts?search_text=${encodeURIComponent(vendorName)}&organization_id=${orgId}`,
+    { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+  );
+  const searchData = await searchRes.json() as {
+    code: number;
+    contacts?: { contact_id: string; contact_name: string; contact_type: string }[];
+  };
+
+  if (searchData.code === 0 && searchData.contacts?.length) {
+    const vendor = searchData.contacts.find(
+      (c) => c.contact_type === "vendor" &&
+             c.contact_name.toLowerCase() === vendorName.toLowerCase()
+    );
+    if (vendor) return vendor.contact_id;
+  }
+
+  // Create vendor if not found
+  const createRes = await fetch(
+    `https://www.zohoapis.in/inventory/v1/contacts?organization_id=${orgId}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ contact_name: vendorName, contact_type: "vendor" }),
+    }
+  );
+  const createData = await createRes.json() as {
+    code: number; message: string;
+    contact?: { contact_id: string };
+  };
+  if (createData.code !== 0) throw new Error(`Failed to create Zoho vendor "${vendorName}": ${createData.message}`);
+  return createData.contact!.contact_id;
+}
+
 async function getZohoAccessToken(): Promise<string> {
   const clientId = process.env.ZOHO_CLIENT_ID;
   const clientSecret = process.env.ZOHO_CLIENT_SECRET;
@@ -340,8 +383,10 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
     const token = await getZohoAccessToken();
     const orgId = process.env.ZOHO_ORG_ID || "";
 
+    const vendorId = await getOrCreateZohoVendor(token, orgId, rec.distributor_name);
+
     const poPayload = {
-      vendor_name: rec.distributor_name,
+      vendor_id: vendorId,
       purchaseorder_number: `PO-${Date.now()}`,
       date: now.slice(0, 10),
       delivery_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
