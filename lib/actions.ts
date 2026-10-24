@@ -330,6 +330,68 @@ async function getOrCreateZohoVendor(
   return createData.contact!.contact_id;
 }
 
+async function getOrCreateZohoPurchaseItem(
+  token: string,
+  orgId: string,
+  itemName: string,
+  skuId: string,
+): Promise<string> {
+  // Search for existing item by name
+  const searchRes = await fetch(
+    `https://www.zohoapis.in/inventory/v1/items?search_text=${encodeURIComponent(itemName)}&organization_id=${orgId}`,
+    { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+  );
+  const searchData = await searchRes.json() as {
+    code: number;
+    items?: { item_id: string; name: string; is_purchase_item: boolean }[];
+  };
+
+  if (searchData.code === 0 && searchData.items?.length) {
+    const match = searchData.items.find(
+      (i) => i.name.toLowerCase() === itemName.toLowerCase()
+    );
+    if (match) {
+      if (!match.is_purchase_item) {
+        // Enable purchase info on existing item
+        const updateRes = await fetch(
+          `https://www.zohoapis.in/inventory/v1/items/${match.item_id}?organization_id=${orgId}`,
+          {
+            method: "PUT",
+            headers: { Authorization: `Zoho-oauthtoken ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ is_purchase_item: true, purchase_rate: 0 }),
+          }
+        );
+        const updateData = await updateRes.json() as { code: number; message: string };
+        if (updateData.code !== 0) throw new Error(`Failed to enable purchase info on Zoho item: ${updateData.message}`);
+      }
+      return match.item_id;
+    }
+  }
+
+  // Create a new purchase item
+  const createRes = await fetch(
+    `https://www.zohoapis.in/inventory/v1/items?organization_id=${orgId}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Zoho-oauthtoken ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: itemName,
+        description: `SKU ${skuId} — Freshroots demand planner`,
+        is_purchase_item: true,
+        purchase_rate: 0,
+        unit: "Units",
+        item_type: "inventory",
+      }),
+    }
+  );
+  const createData = await createRes.json() as {
+    code: number; message: string;
+    item?: { item_id: string };
+  };
+  if (createData.code !== 0) throw new Error(`Failed to create Zoho item "${itemName}": ${createData.message}`);
+  return createData.item!.item_id;
+}
+
 async function getZohoAccessToken(): Promise<string> {
   const clientId = process.env.ZOHO_CLIENT_ID;
   const clientSecret = process.env.ZOHO_CLIENT_SECRET;
@@ -391,13 +453,17 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
       // contacts scope missing — proceed with vendor_name only
     }
 
+    // Look up or create the catalog item and ensure it has purchase info enabled
+    const itemId = await getOrCreateZohoPurchaseItem(token, orgId, rec.sku_name, rec.sku_id);
+
     const poPayload: Record<string, unknown> = {
       ...(vendorId ? { vendor_id: vendorId } : { vendor_name: rec.distributor_name }),
       purchaseorder_number: `PO-${Date.now()}`,
       date: now.slice(0, 10),
       delivery_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
       line_items: [{
-        description: `${rec.sku_name} — Reorder for ${rec.sku_id} (Freshroots demand planning)`,
+        item_id: itemId,
+        description: `Reorder for ${rec.sku_id} (Freshroots demand planning)`,
         quantity: qty,
         rate: 0,
         unit: "Units",
