@@ -398,6 +398,33 @@ async function getZohoPurchasesAccountId(token: string, orgId: string): Promise<
   }
 }
 
+// Resolve the correct Zoho organization ID.
+// Calls /organizations to discover available orgs for the token; if ZOHO_ORG_ID
+// matches one of them it is preferred, otherwise the first org is used.
+async function getZohoOrgId(token: string): Promise<string> {
+  const envOrgId = process.env.ZOHO_ORG_ID;
+  try {
+    const res = await fetch("https://www.zohoapis.in/inventory/v1/organizations", {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    });
+    const data = await res.json() as {
+      code: number;
+      organizations?: { organization_id: string; name: string }[];
+    };
+    if (data.code === 0 && data.organizations?.length) {
+      if (envOrgId && data.organizations.some((o) => o.organization_id === envOrgId)) {
+        return envOrgId;
+      }
+      const org = data.organizations[0];
+      console.log("[Zoho] Auto-selected org:", org.organization_id, org.name, "| env had:", envOrgId);
+      return org.organization_id;
+    }
+  } catch (e) {
+    console.error("[Zoho] Org lookup failed:", (e as Error).message);
+  }
+  return envOrgId || "";
+}
+
 async function getZohoAccessToken(): Promise<string> {
   const clientId = process.env.ZOHO_CLIENT_ID;
   const clientSecret = process.env.ZOHO_CLIENT_SECRET;
@@ -455,7 +482,7 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
   if (zohoConfigured) {
     try {
       const token = await getZohoAccessToken();
-      const orgId = process.env.ZOHO_ORG_ID || "";
+      const orgId = await getZohoOrgId(token);
 
       // ── Vendor ───────────────────────────────────────────────────────────
       let vendorId: string | undefined;
