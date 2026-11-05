@@ -504,7 +504,7 @@ export async function createZohoPurchaseOrder(recId: number): Promise<{
       purchaseorder?: { purchaseorder_id: string; purchaseorder_number: string };
     };
 
-    if (zohoData.code !== 0) throw new Error(`${zohoData.message} [debug: itemId=${itemId ?? "none"}, name=${(lineItem.name as string) ?? "n/a"}]`);
+    if (zohoData.code !== 0) throw new Error(zohoData.message);
 
     const poId = zohoData.purchaseorder?.purchaseorder_id ?? "";
     const poNumber = zohoData.purchaseorder?.purchaseorder_number ?? "";
@@ -563,4 +563,50 @@ export async function getApprovedForProcurement(runId?: number) {
 
   const rows = await client.execute(runId ? { sql, args: [runId] } : sql);
   return rows.rows;
+}
+
+export async function getRulesConfig() {
+  const client = getClient();
+  try {
+    const rows = await client.execute("SELECT key, value, updated_at, updated_by FROM rules_config ORDER BY key");
+    return rows.rows as unknown as { key: string; value: string; updated_at: string; updated_by: string }[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveRulesConfig(
+  updates: Record<string, number>,
+  actor: string
+): Promise<{ success: boolean; error?: string }> {
+  "use server";
+  const client = getClient();
+  const now = new Date().toISOString();
+  try {
+    for (const [key, value] of Object.entries(updates)) {
+      await client.execute({
+        sql: `INSERT INTO rules_config (key, value, updated_at, updated_by)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+        args: [key, String(value), now, actor],
+      });
+    }
+    // Bump rules version in audit
+    await client.execute({
+      sql: "INSERT INTO audit_events (event_type, actor, entity_type, entity_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      args: ["rules_config_updated", actor, "rules_config", "global", JSON.stringify(updates), now],
+    });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+}
+
+export async function getSkuSalesHistory(skuId: string) {
+  const client = getClient();
+  const rows = await client.execute({
+    sql: "SELECT week_label, units_sold FROM weekly_sales WHERE sku_id = ? ORDER BY week_label ASC",
+    args: [skuId],
+  });
+  return rows.rows as unknown as { week_label: string; units_sold: number }[];
 }

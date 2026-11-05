@@ -95,6 +95,14 @@ CREATE TABLE IF NOT EXISTS audit_events (
   payload_json TEXT,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS rules_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT 'system'
+);
 `;
 
 // Schema evolution: rename run_at → ran_at on Neon if table was created by an older migration.

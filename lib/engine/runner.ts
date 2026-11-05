@@ -1,37 +1,53 @@
 import { getClient } from "../db/client-raw";
-import { evaluateSku, RULES_VERSION, type SkuInput } from "./rules";
+import { evaluateSku, THRESHOLDS, RULES_VERSION, type SkuInput } from "./rules";
 
 interface SalesRow { sku_id: string; week_label: string; units_sold: number }
 interface InvRow { sku_id: string; units_on_hand: number }
 interface SkuRow { sku_id: string; perishability: string; standard_reorder_qty: number }
 interface CalRow { is_festival_month: number }
 
-// ISO week sort: "2026-W27" < "2026-W28" etc.
 function sortWeeks(a: string, b: string) {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Load runtime threshold overrides from rules_config table (falls back to code defaults if table missing or empty)
+async function loadRulesConfig(): Promise<typeof THRESHOLDS> {
+  const client = getClient();
+  try {
+    const rows = await client.execute("SELECT key, value FROM rules_config");
+    const overrides: Record<string, number> = {};
+    for (const row of rows.rows as unknown as { key: string; value: string }[]) {
+      const n = parseFloat(row.value);
+      if (!isNaN(n)) overrides[row.key] = n;
+    }
+    return { ...THRESHOLDS, ...overrides } as typeof THRESHOLDS;
+  } catch {
+    return THRESHOLDS;
+  }
 }
 
 export async function runForecast(): Promise<number> {
   const client = getClient();
   const now = new Date().toISOString();
-  const analysisMonth = "2026-10"; // current month from calendar
+  // Dynamic analysis month from current date
+  const analysisMonth = now.slice(0, 7);
 
-  // Check festival month
+  const thresholds = await loadRulesConfig();
+
+  // Check festival month in calendar; default to false if month not seeded
   const calRows = await client.execute({
     sql: "SELECT is_festival_month FROM calendar_months WHERE year_month = ?",
     args: [analysisMonth],
   });
   const isFestival = calRows.rows.length > 0 && (calRows.rows[0] as unknown as CalRow).is_festival_month === 1;
 
-  // Load all sales — we'll window W27–W38 (12w) and W39–W42 (4w)
+  // Load all sales — sort per SKU, use rolling window
   const salesRows = await client.execute("SELECT sku_id, week_label, units_sold FROM weekly_sales");
   const salesMap: Record<string, SalesRow[]> = {};
   for (const row of salesRows.rows as unknown as SalesRow[]) {
     if (!salesMap[row.sku_id]) salesMap[row.sku_id] = [];
     salesMap[row.sku_id].push(row);
   }
-
-  // Sort each SKU's weeks
   for (const skuId in salesMap) {
     salesMap[skuId].sort((a, b) => sortWeeks(a.week_label, b.week_label));
   }
@@ -57,26 +73,38 @@ export async function runForecast(): Promise<number> {
   });
   const runId = Number(runResult.lastInsertRowid);
 
-  // Run engine for each SKU
+  // Run engine for each SKU using a rolling window of the most recent weeks
   for (const row of skuRows.rows as unknown as SkuRow[]) {
     const skuId = row.sku_id;
     const allWeeks = salesMap[skuId] ?? [];
 
-    // Weeks W27–W38 = 12w baseline, W39–W42 = 4w recent
-    const weeks12 = allWeeks.filter(w => w.week_label <= "2026-W38").slice(-12);
-    const weeks4 = allWeeks.filter(w => w.week_label >= "2026-W39").slice(-4);
+    if (allWeeks.length < 4) continue; // need at least 4 weeks of data
+
+    // Rolling window: last 4 weeks = recent, prior 12 = baseline
+    const recent = allWeeks.slice(-4);
+    const baseline = allWeeks.slice(-16, -4); // up to 12 weeks before the recent 4
+
+    const sales4w = recent.map(w => w.units_sold);
+
+    // Pad baseline to 12 weeks if fewer are available (use 4w avg as filler)
+    const avg4wFill = sales4w.reduce((a, b) => a + b, 0) / sales4w.length;
+    const baselinePadded = baseline.length >= 12
+      ? baseline.slice(-12).map(w => w.units_sold)
+      : [
+          ...Array(12 - baseline.length).fill(Math.round(avg4wFill)),
+          ...baseline.map(w => w.units_sold),
+        ];
 
     const input: SkuInput = {
       skuId,
       perishability: row.perishability as "High" | "Low",
       standardReorderQty: row.standard_reorder_qty,
       unitsOnHand: invMap[skuId] ?? 0,
-      sales12w: weeks12.map(w => w.units_sold),
-      sales4w: weeks4.map(w => w.units_sold),
+      sales12w: baselinePadded,
+      sales4w,
       isFestivalMonth: isFestival,
+      thresholds,
     };
-
-    if (input.sales12w.length < 12 || input.sales4w.length < 4) continue;
 
     const result = evaluateSku(input);
 
@@ -95,7 +123,7 @@ export async function runForecast(): Promise<number> {
   // Audit
   await client.execute({
     sql: "INSERT INTO audit_events (event_type, actor, entity_type, entity_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    args: ["forecast_run", "system", "forecast_run", String(runId), JSON.stringify({ rulesVersion: RULES_VERSION, isFestival }), now],
+    args: ["forecast_run", "system", "forecast_run", String(runId), JSON.stringify({ rulesVersion: RULES_VERSION, isFestival, analysisMonth }), now],
   });
 
   return runId;

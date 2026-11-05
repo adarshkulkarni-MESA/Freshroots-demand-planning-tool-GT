@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, PauseCircle, CheckCircle, Sparkles } from "lucide-react";
-import { getGeminiInsight } from "@/lib/actions";
+import { getGeminiInsight, getSkuSalesHistory } from "@/lib/actions";
 
 type Rec = {
   id: number; sku_id: string; sku_name: string; action: string;
@@ -11,11 +11,84 @@ type Rec = {
   distributor_name: string; flags: { rule: string; detail: string }[];
 };
 
+type SalesPoint = { week_label: string; units_sold: number };
+
+function Sparkline({ data }: { data: SalesPoint[] }) {
+  if (data.length < 2) return null;
+  const vals = data.map((d) => d.units_sold);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const W = 240, H = 48, PAD = 4;
+  const xStep = (W - PAD * 2) / (vals.length - 1);
+
+  const points = vals.map((v, i) => {
+    const x = PAD + i * xStep;
+    const y = PAD + (1 - (v - min) / range) * (H - PAD * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const recent = data.slice(-4);
+  const recentAvg = recent.reduce((s, d) => s + d.units_sold, 0) / recent.length;
+  const baselineAvg = vals.reduce((s, v) => s + v, 0) / vals.length;
+  const trend = recentAvg > baselineAvg * 1.1 ? "up" : recentAvg < baselineAvg * 0.9 ? "down" : "flat";
+  const trendColor = trend === "up" ? "#0d9488" : trend === "down" ? "#ef4444" : "#64748b";
+
+  return (
+    <div className="mt-4 bg-slate-50 rounded-lg p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-slate-500 font-medium">Weekly Sales Trend ({data.length} weeks)</span>
+        <span className="text-xs font-medium" style={{ color: trendColor }}>
+          {trend === "up" ? "▲ Rising" : trend === "down" ? "▼ Falling" : "→ Stable"}{" "}
+          <span className="text-slate-400 font-normal">4w avg {recentAvg.toFixed(0)} vs {baselineAvg.toFixed(0)} overall</span>
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 48 }}>
+        <polyline
+          points={points.join(" ")}
+          fill="none"
+          stroke={trendColor}
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {vals.map((v, i) => {
+          const x = PAD + i * xStep;
+          const y = PAD + (1 - (v - min) / range) * (H - PAD * 2);
+          const isRecent = i >= vals.length - 4;
+          return (
+            <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r={isRecent ? 2.5 : 1.5}
+              fill={isRecent ? trendColor : "#cbd5e1"} />
+          );
+        })}
+      </svg>
+      <div className="flex justify-between text-xs text-slate-400 mt-1">
+        <span>{data[0]?.week_label}</span>
+        <span className="text-slate-500">Last 4w highlighted</span>
+        <span>{data[data.length - 1]?.week_label}</span>
+      </div>
+    </div>
+  );
+}
+
 export function SkuExplorer({ recs }: { recs: Rec[] }) {
   const [selectedId, setSelectedId] = useState<string>(recs[0]?.sku_id ?? "");
   const [geminiText, setGeminiText] = useState<Record<string, string>>({});
   const [geminiLoading, setGeminiLoading] = useState<Record<string, boolean>>({});
+  const [salesHistory, setSalesHistory] = useState<Record<string, SalesPoint[]>>({});
+  const [salesLoading, setSalesLoading] = useState<Record<string, boolean>>({});
   const selected = recs.find((r) => r.sku_id === selectedId) ?? recs[0];
+
+  useEffect(() => {
+    if (!selected) return;
+    const id = selected.sku_id;
+    if (salesHistory[id] || salesLoading[id]) return;
+    setSalesLoading((p) => ({ ...p, [id]: true }));
+    getSkuSalesHistory(id).then((data) => {
+      setSalesHistory((p) => ({ ...p, [id]: data }));
+      setSalesLoading((p) => ({ ...p, [id]: false }));
+    });
+  }, [selected?.sku_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchGemini(rec: Rec) {
     if (geminiText[rec.sku_id]) return; // already fetched
@@ -101,6 +174,14 @@ export function SkuExplorer({ recs }: { recs: Rec[] }) {
                 <div className="text-xl font-bold text-amber-600 mt-1">{selected.effective_demand.toFixed(1)}</div>
               </div>
             </div>
+
+            {/* Sales sparkline */}
+            {salesLoading[selected.sku_id] && (
+              <div className="mt-4 bg-slate-50 rounded-lg p-3 text-xs text-slate-400 animate-pulse">Loading sales history…</div>
+            )}
+            {salesHistory[selected.sku_id] && (
+              <Sparkline data={salesHistory[selected.sku_id]} />
+            )}
 
             {selected.reorder_qty && (
               <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-5 flex items-center justify-between">

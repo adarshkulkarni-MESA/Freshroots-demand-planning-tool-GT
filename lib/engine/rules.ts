@@ -23,9 +23,10 @@ export interface SkuInput {
   perishability: "High" | "Low";
   standardReorderQty: number;
   unitsOnHand: number;
-  sales12w: number[];  // oldest first, exactly 12 values
-  sales4w: number[];   // exactly 4 values (most recent)
+  sales12w: number[];  // oldest first, 12 values (padded if fewer available)
+  sales4w: number[];   // 4 values (most recent)
   isFestivalMonth: boolean;
+  thresholds?: typeof THRESHOLDS; // runtime overrides from rules_config
 }
 
 export interface SkuResult {
@@ -47,6 +48,7 @@ function round2(n: number) {
 
 export function evaluateSku(input: SkuInput): SkuResult {
   const { skuId, perishability, standardReorderQty, unitsOnHand, sales12w, sales4w, isFestivalMonth } = input;
+  const T = input.thresholds ?? THRESHOLDS;
   const flags: RuleFlag[] = [];
 
   // Compute raw averages
@@ -54,38 +56,38 @@ export function evaluateSku(input: SkuInput): SkuResult {
   const avg4w = round2(sales4w.reduce((a, b) => a + b, 0) / 4);
 
   // Rule 4: Festival uplift applied to baseline for coverage check (not for high-demand signal)
-  const festivalAdd = isFestivalMonth ? round2(avg12w * THRESHOLDS.FESTIVAL_UPLIFT) : 0;
+  const festivalAdd = isFestivalMonth ? round2(avg12w * T.FESTIVAL_UPLIFT) : 0;
   const effectiveDemand = round2(avg12w + festivalAdd);
 
   if (isFestivalMonth) {
-    flags.push({ rule: "Rule 4", detail: `Festival month: +${festivalAdd.toFixed(1)} units/week uplift (25% of 12w avg ${avg12w})` });
+    flags.push({ rule: "Rule 4", detail: `Festival month: +${festivalAdd.toFixed(1)} units/week uplift (${Math.round(T.FESTIVAL_UPLIFT * 100)}% of 12w avg ${avg12w})` });
   }
 
   const stockCoverWeeks = round2(effectiveDemand > 0 ? unitsOnHand / effectiveDemand : 999);
 
   // Rule 5: Perishable override — highest priority
   if (perishability === "High") {
-    if (stockCoverWeeks < THRESHOLDS.PERISH_MIN_WEEKS) {
-      flags.push({ rule: "Rule 5", detail: `Perishable stockout: ${stockCoverWeeks}w cover < ${THRESHOLDS.PERISH_MIN_WEEKS}w minimum` });
+    if (stockCoverWeeks < T.PERISH_MIN_WEEKS) {
+      flags.push({ rule: "Rule 5", detail: `Perishable stockout: ${stockCoverWeeks}w cover < ${T.PERISH_MIN_WEEKS}w minimum` });
       return {
         skuId, action: "REORDER_URGENT", reorderQty: standardReorderQty,
         stockCoverWeeks, avg12w, avg4w, effectiveDemand, isFestivalMonth, flags, rulesVersion: RULES_VERSION,
       };
     }
-    if (stockCoverWeeks > THRESHOLDS.PERISH_MAX_WEEKS) {
-      const isBorderline = stockCoverWeeks <= THRESHOLDS.PERISH_MAX_WEEKS + 0.5;
-      flags.push({ rule: "Rule 5", detail: `Perishable overstock: ${stockCoverWeeks}w cover > ${THRESHOLDS.PERISH_MAX_WEEKS}w maximum${isBorderline ? " (BORDERLINE — review carefully)" : ""}` });
+    if (stockCoverWeeks > T.PERISH_MAX_WEEKS) {
+      const isBorderline = stockCoverWeeks <= T.PERISH_MAX_WEEKS + 0.5;
+      flags.push({ rule: "Rule 5", detail: `Perishable overstock: ${stockCoverWeeks}w cover > ${T.PERISH_MAX_WEEKS}w maximum${isBorderline ? " (BORDERLINE — review carefully)" : ""}` });
       return {
         skuId, action: "PAUSE_ORDER", reorderQty: null,
         stockCoverWeeks, avg12w, avg4w, effectiveDemand, isFestivalMonth, flags, rulesVersion: RULES_VERSION,
       };
     }
-    flags.push({ rule: "Rule 5", detail: `Perishable cover ${stockCoverWeeks}w within ${THRESHOLDS.PERISH_MIN_WEEKS}–${THRESHOLDS.PERISH_MAX_WEEKS}w range` });
+    flags.push({ rule: "Rule 5", detail: `Perishable cover ${stockCoverWeeks}w within ${T.PERISH_MIN_WEEKS}–${T.PERISH_MAX_WEEKS}w range` });
   }
 
   // Rule 3: Overstock check
-  if (stockCoverWeeks > THRESHOLDS.OVERSTOCK_WEEKS) {
-    flags.push({ rule: "Rule 3", detail: `Overstock: ${stockCoverWeeks}w cover > ${THRESHOLDS.OVERSTOCK_WEEKS}w threshold` });
+  if (stockCoverWeeks > T.OVERSTOCK_WEEKS) {
+    flags.push({ rule: "Rule 3", detail: `Overstock: ${stockCoverWeeks}w cover > ${T.OVERSTOCK_WEEKS}w threshold` });
     return {
       skuId, action: "PAUSE_ORDER", reorderQty: null,
       stockCoverWeeks, avg12w, avg4w, effectiveDemand, isFestivalMonth, flags, rulesVersion: RULES_VERSION,
@@ -93,14 +95,14 @@ export function evaluateSku(input: SkuInput): SkuResult {
   }
 
   // Rule 2: Stockout risk
-  if (stockCoverWeeks < THRESHOLDS.STOCKOUT_WEEKS) {
+  if (stockCoverWeeks < T.STOCKOUT_WEEKS) {
     let qty = standardReorderQty;
-    flags.push({ rule: "Rule 2", detail: `Stockout risk: ${stockCoverWeeks}w cover < ${THRESHOLDS.STOCKOUT_WEEKS}w threshold` });
+    flags.push({ rule: "Rule 2", detail: `Stockout risk: ${stockCoverWeeks}w cover < ${T.STOCKOUT_WEEKS}w threshold` });
 
     // Rule 1: High demand modifier on top of stockout
-    if (avg4w > avg12w * THRESHOLDS.HIGH_DEMAND_RATIO) {
-      qty = Math.ceil(standardReorderQty * THRESHOLDS.HIGH_DEMAND_REORDER_MULT);
-      flags.push({ rule: "Rule 1", detail: `High demand: 4w avg ${avg4w} > 12w avg ${avg12w} × ${THRESHOLDS.HIGH_DEMAND_RATIO} (${round2(avg12w * THRESHOLDS.HIGH_DEMAND_RATIO)}). Reorder at 1.5× = ${qty}` });
+    if (avg4w > avg12w * T.HIGH_DEMAND_RATIO) {
+      qty = Math.ceil(standardReorderQty * T.HIGH_DEMAND_REORDER_MULT);
+      flags.push({ rule: "Rule 1", detail: `High demand: 4w avg ${avg4w} > 12w avg ${avg12w} × ${T.HIGH_DEMAND_RATIO} (${round2(avg12w * T.HIGH_DEMAND_RATIO)}). Reorder at ${T.HIGH_DEMAND_REORDER_MULT}× = ${qty}` });
     }
 
     return {
@@ -110,9 +112,9 @@ export function evaluateSku(input: SkuInput): SkuResult {
   }
 
   // Rule 1: High demand (standalone, no stockout)
-  if (avg4w > avg12w * THRESHOLDS.HIGH_DEMAND_RATIO) {
-    const qty = Math.ceil(standardReorderQty * THRESHOLDS.HIGH_DEMAND_REORDER_MULT);
-    flags.push({ rule: "Rule 1", detail: `High demand: 4w avg ${avg4w} > 12w avg ${avg12w} × ${THRESHOLDS.HIGH_DEMAND_RATIO}. Reorder at 1.5× = ${qty}` });
+  if (avg4w > avg12w * T.HIGH_DEMAND_RATIO) {
+    const qty = Math.ceil(standardReorderQty * T.HIGH_DEMAND_REORDER_MULT);
+    flags.push({ rule: "Rule 1", detail: `High demand: 4w avg ${avg4w} > 12w avg ${avg12w} × ${T.HIGH_DEMAND_RATIO}. Reorder at ${T.HIGH_DEMAND_REORDER_MULT}× = ${qty}` });
     return {
       skuId, action: "REORDER_URGENT", reorderQty: qty,
       stockCoverWeeks, avg12w, avg4w, effectiveDemand, isFestivalMonth, flags, rulesVersion: RULES_VERSION,

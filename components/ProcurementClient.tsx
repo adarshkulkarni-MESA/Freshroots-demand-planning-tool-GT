@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createZohoPurchaseOrder } from "@/lib/actions";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { ExternalLink, Loader2, CheckCircle2, AlertCircle, Download } from "lucide-react";
 
 type ProcurementItem = {
   id: number;
@@ -16,6 +16,25 @@ type ProcurementItem = {
 };
 
 type ZohoState = { loading?: boolean; poNumber?: string; error?: string };
+
+function downloadCSV(items: ProcurementItem[]) {
+  const header = "SKU ID,SKU Name,Distributor,Quantity,PO Number";
+  const rows = items.map((item) => {
+    const qty = item.reorder_qty ?? item.standard_reorder_qty;
+    const po = item.override_note?.startsWith("Zoho PO created:")
+      ? item.override_note.replace("Zoho PO created:", "").trim()
+      : "";
+    return [item.sku_id, `"${item.sku_name}"`, `"${item.distributor_name}"`, qty, po].join(",");
+  });
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `procurement-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function ProcurementClient({ items }: { items: ProcurementItem[] }) {
   const router = useRouter();
@@ -49,6 +68,16 @@ export function ProcurementClient({ items }: { items: ProcurementItem[] }) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <button
+          onClick={() => downloadCSV(items)}
+          className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:border-slate-300 px-4 py-2 rounded-lg transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          Download PO CSV
+        </button>
+      </div>
+
       {Object.entries(grouped).map(([dist, distItems]) => (
         <div key={dist} className="bg-white rounded-xl border border-slate-200">
           <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 rounded-t-xl">
