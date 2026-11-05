@@ -15,7 +15,7 @@ type ProcurementItem = {
   distributor_name: string;
 };
 
-type ZohoState = { loading?: boolean; poNumber?: string; error?: string };
+type ZohoState = { loading?: boolean; poNumber?: string; local?: boolean; error?: string };
 
 function downloadCSV(items: ProcurementItem[]) {
   const header = "SKU ID,SKU Name,Distributor,Quantity,PO Number";
@@ -50,7 +50,7 @@ export function ProcurementClient({ items }: { items: ProcurementItem[] }) {
     setZohoStatus((p) => ({ ...p, [id]: { loading: true } }));
     const result = await createZohoPurchaseOrder(id);
     if (result.success) {
-      setZohoStatus((p) => ({ ...p, [id]: { poNumber: result.po_number } }));
+      setZohoStatus((p) => ({ ...p, [id]: { poNumber: result.po_number, local: result.local } }));
       router.refresh();
     } else {
       setZohoStatus((p) => ({ ...p, [id]: { error: result.error } }));
@@ -96,10 +96,14 @@ export function ProcurementClient({ items }: { items: ProcurementItem[] }) {
             <tbody>
               {distItems.map((item) => {
                 const state = zohoStatus[item.id];
-                const existingPO = item.override_note?.startsWith("Zoho PO created:")
+                const existingZohoPO = item.override_note?.startsWith("Zoho PO created:")
                   ? item.override_note.replace("Zoho PO created:", "").trim()
                   : null;
-                const shownPO = state?.poNumber ?? existingPO;
+                const existingLocalPO = item.override_note?.startsWith("PO drafted:")
+                  ? item.override_note.replace("PO drafted:", "").trim()
+                  : null;
+                const shownPO = state?.poNumber ?? existingZohoPO ?? existingLocalPO;
+                const isLocal = state?.local ?? (!!existingLocalPO && !existingZohoPO);
                 const qty = item.reorder_qty ?? item.standard_reorder_qty;
 
                 return (
@@ -109,10 +113,17 @@ export function ProcurementClient({ items }: { items: ProcurementItem[] }) {
                     <td className="px-5 py-3 text-right font-semibold text-slate-900">{qty} units</td>
                     <td className="px-5 py-3 text-right">
                       {shownPO ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          {shownPO}
-                        </span>
+                        isLocal ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1" title="Local draft — Zoho not configured or unreachable">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Draft ✓
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            {shownPO}
+                          </span>
+                        )
                       ) : state?.error ? (
                         <div className="flex flex-col items-end gap-1">
                           <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
