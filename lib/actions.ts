@@ -330,25 +330,55 @@ async function getOrCreateZohoVendor(
   return createData.contact!.contact_id;
 }
 
-// Try to get item_id by searching catalog. Throws ITEMS_SCOPE_MISSING if scope not granted.
+// Get or create a Zoho catalog item with is_purchase_item=true.
+// - Finds existing item → returns its id if already a purchase item, or enables it via PUT first.
+// - No existing item → creates a new one.
+// Throws ITEMS_SCOPE_MISSING when the items.ALL scope is not granted.
 async function getZohoPurchaseItemId(
   token: string,
   orgId: string,
   itemName: string,
 ): Promise<string | null> {
+  const headers = { Authorization: `Zoho-oauthtoken ${token}`, "Content-Type": "application/json" };
+  const baseUrl = `https://www.zohoapis.in/inventory/v1`;
+
   const searchRes = await fetch(
-    `https://www.zohoapis.in/inventory/v1/items?search_text=${encodeURIComponent(itemName)}&organization_id=${orgId}`,
-    { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+    `${baseUrl}/items?search_text=${encodeURIComponent(itemName)}&organization_id=${orgId}`,
+    { headers }
   );
   const searchData = await searchRes.json() as {
     code: number; message?: string;
-    items?: { item_id: string; name: string; is_purchase_item: boolean }[];
+    items?: { item_id: string; name: string; is_purchase_item: boolean; purchase_rate?: number }[];
   };
   if (searchData.code !== 0) throw new Error("ITEMS_SCOPE_MISSING");
-  const match = searchData.items?.find(
-    (i) => i.is_purchase_item && i.name.toLowerCase() === itemName.toLowerCase()
+
+  const existing = searchData.items?.find(
+    (i) => i.name.toLowerCase() === itemName.toLowerCase()
   );
-  return match?.item_id ?? null;
+
+  if (existing?.is_purchase_item) {
+    return existing.item_id;
+  }
+
+  if (existing && !existing.is_purchase_item) {
+    // Enable purchase on the existing item
+    const updateRes = await fetch(
+      `${baseUrl}/items/${existing.item_id}?organization_id=${orgId}`,
+      { method: "PUT", headers, body: JSON.stringify({ is_purchase_item: true, purchase_rate: existing.purchase_rate ?? 0 }) }
+    );
+    const updateData = await updateRes.json() as { code: number; item?: { item_id: string } };
+    if (updateData.code === 0) return existing.item_id;
+    return null; // update failed, fall through to other tiers
+  }
+
+  // Item doesn't exist in Zoho — create it
+  const createRes = await fetch(
+    `${baseUrl}/items?organization_id=${orgId}`,
+    { method: "POST", headers, body: JSON.stringify({ name: itemName, unit: "Units", product_type: "goods", is_purchase_item: true, purchase_rate: 0 }) }
+  );
+  const createData = await createRes.json() as { code: number; item?: { item_id: string } };
+  if (createData.code === 0 && createData.item?.item_id) return createData.item.item_id;
+  return null;
 }
 
 // Try to get a "Purchases" / COGS account ID for use as an account_id line item.
