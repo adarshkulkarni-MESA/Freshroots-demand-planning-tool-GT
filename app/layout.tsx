@@ -3,7 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", weight: ["400", "500", "600", "700"] });
 
 export const metadata: Metadata = {
   title: "Freshroots Demand Planner",
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased bg-slate-50 text-slate-900`}>
+      <body className={`${inter.variable} font-sans bg-[#f7f9fc] text-slate-900`}>
         <div className="flex min-h-screen">
           <Sidebar />
           <main className="flex-1 min-w-0 overflow-auto">

@@ -16,14 +16,16 @@ export default async function ProcurementPage() {
   }));
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Procurement & PO Handoff</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Approved reorder items ready for purchase order generation
-        </p>
+    <div className="min-h-screen bg-[#f7f9fc]">
+      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-100">
+        <div className="px-8 py-4 max-w-4xl">
+          <h1 className="text-lg font-bold text-slate-900 tracking-tight">Procurement & PO</h1>
+          <p className="text-slate-400 mt-0.5 text-xs">Approved reorder items ready for purchase order generation</p>
+        </div>
       </div>
-      <ProcurementClient items={items} />
+      <div className="p-8 max-w-4xl">
+        <ProcurementClient items={items} />
+      </div>
     </div>
   );
 }

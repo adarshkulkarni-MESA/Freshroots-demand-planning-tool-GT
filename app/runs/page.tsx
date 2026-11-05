@@ -7,13 +7,16 @@ export default async function RunsPage() {
   const runs = await getForecastRuns() as Record<string, unknown>[];
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Forecast Runs & History</h1>
-        <p className="text-slate-500 text-sm mt-1">Immutable run records — every calculation is traceable</p>
+    <div className="min-h-screen bg-[#f7f9fc]">
+      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-100">
+        <div className="px-8 py-4 max-w-4xl">
+          <h1 className="text-lg font-bold text-slate-900 tracking-tight">Forecast Runs & History</h1>
+          <p className="text-slate-400 mt-0.5 text-xs">Immutable run records — every calculation is traceable</p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="p-8 max-w-4xl">
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
@@ -53,6 +56,7 @@ export default async function RunsPage() {
             )}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );
