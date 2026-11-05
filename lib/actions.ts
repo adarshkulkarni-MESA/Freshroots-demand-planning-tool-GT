@@ -408,17 +408,21 @@ async function getZohoOrgId(token: string): Promise<string> {
       headers: { Authorization: `Zoho-oauthtoken ${token}` },
     });
     const data = await res.json() as {
-      code: number;
+      code: number; message?: string;
       organizations?: { organization_id: string; name: string }[];
     };
+    console.log("[Zoho Orgs] code:", data.code, "| orgs:", JSON.stringify(data.organizations ?? data.message));
     if (data.code === 0 && data.organizations?.length) {
-      if (envOrgId && data.organizations.some((o) => o.organization_id === envOrgId)) {
+      const orgIds = data.organizations.map((o) => o.organization_id);
+      if (envOrgId && orgIds.includes(envOrgId)) {
+        console.log("[Zoho Orgs] env org", envOrgId, "confirmed in list");
         return envOrgId;
       }
       const org = data.organizations[0];
-      console.log("[Zoho] Auto-selected org:", org.organization_id, org.name, "| env had:", envOrgId);
+      console.log("[Zoho Orgs] Auto-selected org:", org.organization_id, org.name, "| env had:", envOrgId);
       return org.organization_id;
     }
+    console.error("[Zoho Orgs] Unexpected response, falling back to env:", envOrgId);
   } catch (e) {
     console.error("[Zoho] Org lookup failed:", (e as Error).message);
   }
