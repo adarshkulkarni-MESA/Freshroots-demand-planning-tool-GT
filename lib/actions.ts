@@ -287,12 +287,15 @@ export async function getImportHistory() {
 
 // ─── Zoho Inventory PO ───────────────────────────────────────────────────────
 
+// Look up an existing vendor contact by name. Returns the contact_id if found,
+// or undefined if not (caller falls back to vendor_name in the PO payload).
+// Never creates a new vendor — a freshly-created contact_id is not reliably
+// accepted by the PO endpoint in the same request cycle.
 async function getOrCreateZohoVendor(
   token: string,
   orgId: string,
   vendorName: string
-): Promise<string> {
-  // Search for existing vendor contact
+): Promise<string | undefined> {
   const searchRes = await fetch(
     `https://www.zohoapis.in/inventory/v1/contacts?search_text=${encodeURIComponent(vendorName)}&organization_id=${orgId}`,
     { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
@@ -309,25 +312,7 @@ async function getOrCreateZohoVendor(
     );
     if (vendor) return vendor.contact_id;
   }
-
-  // Create vendor if not found
-  const createRes = await fetch(
-    `https://www.zohoapis.in/inventory/v1/contacts?organization_id=${orgId}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Zoho-oauthtoken ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ contact_name: vendorName, contact_type: "vendor" }),
-    }
-  );
-  const createData = await createRes.json() as {
-    code: number; message: string;
-    contact?: { contact_id: string };
-  };
-  if (createData.code !== 0) throw new Error(`Failed to create Zoho vendor "${vendorName}": ${createData.message}`);
-  return createData.contact!.contact_id;
+  return undefined;
 }
 
 // Get or create a Zoho catalog item with is_purchase_item=true.
@@ -350,7 +335,10 @@ async function getZohoPurchaseItemId(
     code: number; message?: string;
     items?: { item_id: string; name: string; is_purchase_item: boolean; purchase_rate?: number }[];
   };
-  if (searchData.code !== 0) throw new Error("ITEMS_SCOPE_MISSING");
+  if (searchData.code !== 0) {
+    console.error("[Zoho Items] Search failed:", searchData.code, searchData.message);
+    return null;
+  }
 
   const existing = searchData.items?.find(
     (i) => i.name.toLowerCase() === itemName.toLowerCase()
